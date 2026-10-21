@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { adminAPI } from "@food/api"
-import { setAuthData } from "@food/utils/auth"
+import { setAuthData, isModuleAuthenticated } from "@food/utils/auth"
 import { loadBusinessSettings } from "@food/utils/businessSettings"
 import { Button } from "@food/components/ui/button"
 import {
@@ -32,6 +32,13 @@ export default function AdminLogin() {
   const [successMessage, setSuccessMessage] = useState("")
   const [logoUrl, setLogoUrl] = useState(quickSpicyLogo)
   const submittingRef = useRef(false)
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isModuleAuthenticated("admin")) {
+      navigate("/admin/food", { replace: true })
+    }
+  }, [navigate])
 
   useEffect(() => {
     const message = location.state?.message
@@ -111,6 +118,7 @@ export default function AdminLogin() {
         throw new Error("Invalid response from server: missing refresh token")
       }
       setAuthData("admin", accessToken, adminUser, refreshToken)
+      window.dispatchEvent(new Event("adminAuthChanged"))
       navigate("/admin/food", { replace: true })
     } catch (err) {
       const message =

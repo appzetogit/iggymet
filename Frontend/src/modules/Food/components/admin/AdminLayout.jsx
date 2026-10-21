@@ -30,9 +30,11 @@ export default function AdminLayout() {
 
   // Listen to token expiration failure and force logout / redirect
   useEffect(() => {
+    let redirected = false;
     const handleAuthFailure = (event) => {
       const { module } = event.detail || {};
-      if (module === "admin") {
+      if (module === "admin" && !redirected) {
+        redirected = true;
         toast.error("Session expired. Please log in again.");
         navigate("/admin/login", { replace: true });
       }

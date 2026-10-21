@@ -39,7 +39,9 @@ export default function ProtectedRoute({ children }) {
       const canAccess = hasPathAccess(permissions, currentPath)
       if (!canAccess) {
         const fallback = permissions.length > 0 ? normalizePath(permissions[0]) : "/admin/food"
-        return <Navigate to={fallback} replace />
+        if (fallback !== currentPath) {
+          return <Navigate to={fallback} replace />
+        }
       }
     }
   } catch {

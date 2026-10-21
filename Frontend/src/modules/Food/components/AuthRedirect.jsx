@@ -12,7 +12,7 @@ export default function AuthRedirect({ children, module, redirectTo = null }) {
     user: "/food",
     restaurant: "/food/restaurant",
     delivery: "/food/delivery",
-    admin: "/food/admin",
+    admin: "/admin/food",
   }
 
   if (isAuthenticated) {

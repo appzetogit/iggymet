@@ -13,7 +13,7 @@ const ROLE_STORAGE_KEYS = {
 
 const LEGACY_ROLE_STORAGE_KEYS = {
     customer: ['user_accessToken', 'accessToken'],
-    seller: ['seller_accessToken', 'accessToken'],
+    seller: ['seller_accessToken', 'restaurant_accessToken', 'accessToken'],
     admin: ['admin_accessToken', 'accessToken'],
     delivery: ['delivery_accessToken', 'accessToken']
 };
@@ -34,7 +34,7 @@ const getProfileEndpoint = (role) => {
 export const AuthProvider = ({ children }) => {
     // Current role based on URL
     const getCurrentRoleFromUrl = () => {
-        const path = window.location.pathname;
+        const path = typeof window !== 'undefined' ? window.location.pathname : '';
         if (path.startsWith('/seller')) return 'seller';
         if (path.startsWith('/admin')) return 'admin';
         if (path.startsWith('/delivery')) return 'delivery';
@@ -42,6 +42,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     const getSafeToken = (key) => {
+        if (typeof localStorage === 'undefined') return null;
         const val = localStorage.getItem(ROLE_STORAGE_KEYS[key]);
         const fallbackVal =
             val ||
@@ -61,6 +62,26 @@ export const AuthProvider = ({ children }) => {
         admin: getSafeToken('admin'),
         delivery: getSafeToken('delivery'),
     });
+
+    useEffect(() => {
+        const syncTokens = () => {
+            setAuthData({
+                customer: getSafeToken('customer'),
+                seller: getSafeToken('seller'),
+                admin: getSafeToken('admin'),
+                delivery: getSafeToken('delivery'),
+            });
+        };
+
+        window.addEventListener('storage', syncTokens);
+        window.addEventListener('adminAuthChanged', syncTokens);
+        window.addEventListener('authRefreshed', syncTokens);
+        return () => {
+            window.removeEventListener('storage', syncTokens);
+            window.removeEventListener('adminAuthChanged', syncTokens);
+            window.removeEventListener('authRefreshed', syncTokens);
+        };
+    }, []);
 
     const currentRole = getCurrentRoleFromUrl();
     const [user, setUser] = useState(null);
@@ -134,8 +155,7 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
 
         // Final fallback: redirect based on current path if needed
-        // (ProtectedRoute usually handles this, but explicit navigation is safer for some UI edge cases)
-        if (path.startsWith('/admin')) window.location.href = '/admin/auth';
+        if (path.startsWith('/admin')) window.location.href = '/admin/login';
         else if (path.startsWith('/seller')) window.location.href = '/seller/auth';
         else if (path.startsWith('/delivery')) window.location.href = '/delivery/auth';
         else window.location.href = '/login';

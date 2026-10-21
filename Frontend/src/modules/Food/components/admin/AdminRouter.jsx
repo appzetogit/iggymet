@@ -143,6 +143,7 @@ export default function AdminRouter() {
         <Route path="login" element={<AdminLogin />} />
         <Route path="forgot-password" element={<AdminForgotPassword />} />
         <Route path="signup" element={<AdminSignup />} />
+        <Route path="auth" element={<Navigate to="/admin/login" replace />} />
 
         {/* Protected Routes - With Layout */}
         <Route
@@ -153,6 +154,8 @@ export default function AdminRouter() {
           }
         >
           {/* Default Admin Redirect */}
+          <Route index element={<Navigate to="food" replace />} />
+          <Route path="" element={<Navigate to="food" replace />} />
           <Route path="/" element={<Navigate to="food" replace />} />
 
           {/* FOOD ADMIN - All food related routes nested here */}

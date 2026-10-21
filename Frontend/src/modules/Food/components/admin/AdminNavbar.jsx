@@ -227,6 +227,7 @@ export default function AdminNavbar({ onMenuClick }) {
       // Clear admin authentication and preference data from localStorage
       clearModuleAuth('admin');
       localStorage.removeItem('admin_accessToken');
+      localStorage.removeItem('auth_admin');
       localStorage.removeItem('admin_authenticated');
       localStorage.removeItem('admin_user');
       localStorage.removeItem('admin_sidebar_state');
@@ -247,6 +248,7 @@ export default function AdminNavbar({ onMenuClick }) {
       // Clear local data anyway
       clearModuleAuth('admin');
       localStorage.removeItem('admin_accessToken');
+      localStorage.removeItem('auth_admin');
       localStorage.removeItem('admin_authenticated');
       localStorage.removeItem('admin_user');
       localStorage.removeItem('admin_sidebar_state');

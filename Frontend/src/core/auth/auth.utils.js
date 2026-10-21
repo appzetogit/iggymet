@@ -9,21 +9,35 @@
  * @returns {Object|null} - Decoded token payload or null if invalid
  */
 export function decodeToken(token) {
-  if (!token) return null;
+  if (!token || typeof token !== "string") return null;
 
   try {
     // JWT format: header.payload.signature
     const parts = token.split('.');
     if (parts.length !== 3) return null;
 
-    // Decode base64url encoded payload
-    const payload = parts[1];
-    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
-    
-    return decoded;
+    // Decode base64url encoded payload with proper padding
+    let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4 !== 0) {
+      base64 += '=';
+    }
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
   } catch (error) {
-    console.error('Error decoding token:', error);
-    return null;
+    try {
+      let base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (base64.length % 4 !== 0) {
+        base64 += '=';
+      }
+      return JSON.parse(atob(base64));
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -43,8 +57,13 @@ export function getRoleFromToken(token) {
  * @returns {boolean} - True if expired or invalid
  */
 export function isTokenExpired(token) {
+  if (!token) return true;
   const decoded = decodeToken(token);
-  if (!decoded || !decoded.exp) return true;
+  if (!decoded) {
+    const parts = String(token).split('.');
+    return parts.length !== 3;
+  }
+  if (!decoded.exp) return false;
   
   // exp is in seconds, Date.now() is in milliseconds
   return decoded.exp * 1000 < Date.now();
@@ -83,7 +102,20 @@ export function hasModuleAccess(role, module) {
  * @returns {string|null} - Access token or null
  */
 export function getModuleToken(module) {
-  return localStorage.getItem(`${module}_accessToken`);
+  if (typeof localStorage === 'undefined') return null;
+  if (module === 'admin') {
+    return localStorage.getItem('admin_accessToken') || localStorage.getItem('auth_admin') || null;
+  }
+  if (module === 'user') {
+    return localStorage.getItem('user_accessToken') || localStorage.getItem('auth_customer') || localStorage.getItem('accessToken') || null;
+  }
+  if (module === 'restaurant' || module === 'seller') {
+    return localStorage.getItem('restaurant_accessToken') || localStorage.getItem('seller_accessToken') || localStorage.getItem('auth_seller') || null;
+  }
+  if (module === 'delivery') {
+    return localStorage.getItem('delivery_accessToken') || localStorage.getItem('auth_delivery') || null;
+  }
+  return localStorage.getItem(`${module}_accessToken`) || null;
 }
 
 /**
@@ -92,7 +124,20 @@ export function getModuleToken(module) {
  * @returns {string|null} - Refresh token or null
  */
 export function getModuleRefreshToken(module) {
-  return localStorage.getItem(`${module}_refreshToken`);
+  if (typeof localStorage === 'undefined') return null;
+  if (module === 'admin') {
+    return localStorage.getItem('admin_refreshToken') || localStorage.getItem('refreshToken') || null;
+  }
+  if (module === 'user') {
+    return localStorage.getItem('user_refreshToken') || localStorage.getItem('refreshToken') || null;
+  }
+  if (module === 'restaurant' || module === 'seller') {
+    return localStorage.getItem('restaurant_refreshToken') || localStorage.getItem('seller_refreshToken') || localStorage.getItem('refreshToken') || null;
+  }
+  if (module === 'delivery') {
+    return localStorage.getItem('delivery_refreshToken') || localStorage.getItem('refreshToken') || null;
+  }
+  return localStorage.getItem(`${module}_refreshToken`) || null;
 }
 
 /**
@@ -113,9 +158,6 @@ export function getCurrentUserRole(module = null) {
       return getRoleFromToken(refreshToken);
     }
 
-    if (token || refreshToken) {
-      clearModuleAuth(module);
-    }
     return null;
   }
   
@@ -152,7 +194,6 @@ export function isModuleAuthenticated(module) {
     return true;
   }
 
-  clearModuleAuth(module);
   return false;
 }
 
@@ -161,10 +202,22 @@ export function isModuleAuthenticated(module) {
  * @param {string} module - Module name (admin, restaurant, delivery, user)
  */
 export function clearModuleAuth(module) {
+  if (typeof localStorage === 'undefined') return;
   localStorage.removeItem(`${module}_accessToken`);
   localStorage.removeItem(`${module}_refreshToken`);
   localStorage.removeItem(`${module}_authenticated`);
   localStorage.removeItem(`${module}_user`);
+  if (module === "admin") {
+    localStorage.removeItem("auth_admin");
+  }
+  if (module === "restaurant" || module === "seller") {
+    localStorage.removeItem("auth_seller");
+    localStorage.removeItem("seller_accessToken");
+    localStorage.removeItem("seller_refreshToken");
+  }
+  if (module === "delivery") {
+    localStorage.removeItem("auth_delivery");
+  }
   if (module === "user") {
     localStorage.removeItem("auth_customer");
     localStorage.removeItem("accessToken");
@@ -282,12 +335,25 @@ export function setAuthData(module, token, user, refreshToken = null) {
     }
 
     localStorage.setItem(tokenKey, token);
+    if (module === "admin") {
+      localStorage.setItem("auth_admin", token);
+    }
     if (module === "user") {
       localStorage.setItem("auth_customer", token);
       localStorage.setItem("accessToken", token);
     }
+    if (module === "restaurant") {
+      localStorage.setItem("auth_seller", token);
+      localStorage.setItem("seller_accessToken", token);
+    }
+    if (module === "delivery") {
+      localStorage.setItem("auth_delivery", token);
+    }
     if (refreshToken && typeof refreshToken === "string") {
       localStorage.setItem(refreshTokenKey, refreshToken);
+      if (module === "admin") {
+        localStorage.setItem("admin_refreshToken", refreshToken);
+      }
     }
     localStorage.setItem(authKey, 'true');
     
@@ -331,12 +397,25 @@ export function setAuthData(module, token, user, refreshToken = null) {
         localStorage.removeItem('user');
         // Retry storing
         localStorage.setItem(`${module}_accessToken`, token);
+        if (module === "admin") {
+          localStorage.setItem("auth_admin", token);
+        }
         if (module === "user") {
           localStorage.setItem("auth_customer", token);
           localStorage.setItem("accessToken", token);
         }
+        if (module === "restaurant") {
+          localStorage.setItem("auth_seller", token);
+          localStorage.setItem("seller_accessToken", token);
+        }
+        if (module === "delivery") {
+          localStorage.setItem("auth_delivery", token);
+        }
         if (refreshToken && typeof refreshToken === "string") {
           localStorage.setItem(`${module}_refreshToken`, refreshToken);
+          if (module === "admin") {
+            localStorage.setItem("admin_refreshToken", refreshToken);
+          }
         }
         localStorage.setItem(`${module}_authenticated`, 'true');
         if (user) {
