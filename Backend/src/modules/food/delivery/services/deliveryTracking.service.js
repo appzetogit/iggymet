@@ -35,7 +35,7 @@ export const processDriverLocationBatch = async (deliveryPartnerId, payload = {}
 
     // 2. Fetch driver profile & active order
     const [partner, activeOrder] = await Promise.all([
-        FoodDeliveryPartner.findById(deliveryPartnerId).select('status availabilityStatus lastLocationAt name phone').lean(),
+        FoodDeliveryPartner.findById(deliveryPartnerId).select('status availabilityStatus lastLocationAt name phone zoneId').lean(),
         FoodOrder.findOne({
             'dispatch.deliveryPartnerId': partnerObjectId,
             orderStatus: { $in: ['accepted', 'confirmed', 'reached_pickup', 'picked_up', 'out_for_delivery', 'reached_drop'] }
@@ -134,12 +134,19 @@ export const processDriverLocationBatch = async (deliveryPartnerId, payload = {}
             };
 
             // A. MongoDB Driver Profile
+            const isApproved = partner.status === 'approved';
+            const isExplicitlyOffline = payload.status === 'offline' || payload.isOnline === false || payload.is_online === false;
+            const isOnline = isApproved && !isExplicitlyOffline;
+
             FoodDeliveryPartner.findByIdAndUpdate(deliveryPartnerId, {
                 $set: {
                     lastLat: newestPoint.lat,
                     lastLng: newestPoint.lng,
                     lastLocation: newestPoint.location,
-                    lastLocationAt: newestPoint.capturedAt
+                    lastLocationAt: newestPoint.capturedAt,
+                    lastHeading: newestPoint.heading || 0,
+                    lastSpeed: newestPoint.speed || 0,
+                    ...(isOnline ? { availabilityStatus: 'online' } : (isExplicitlyOffline ? { availabilityStatus: 'offline' } : {}))
                 }
             }).catch(e => logger.error(`[LocationBatch] Mongo update error: ${e.message}`));
 
@@ -168,7 +175,14 @@ export const processDriverLocationBatch = async (deliveryPartnerId, payload = {}
                         speed: newestPoint.speed || 0,
                         accuracy: newestPoint.accuracy || 0,
                         last_updated: now,
-                        is_online: partner.availabilityStatus === 'online',
+                        timestamp: now,
+                        status: isOnline ? 'online' : 'offline',
+                        availabilityStatus: isOnline ? 'online' : 'offline',
+                        is_online: isOnline,
+                        isOnline: isOnline,
+                        name: partner.name || '',
+                        phone: partner.phone || '',
+                        zoneId: partner.zoneId ? String(partner.zoneId) : null,
                         active_order_id: activeOrder ? String(activeOrder.orderId || activeOrder._id) : null
                     }).catch(() => {});
 
@@ -205,8 +219,28 @@ export const processDriverLocationBatch = async (deliveryPartnerId, payload = {}
                         deliveryPartnerId: String(deliveryPartnerId),
                         driverId: String(deliveryPartnerId),
                         ...coordPayload,
-                        status: activeOrder?.orderStatus || 'on_the_way'
+                        status: activeOrder?.orderStatus || (isOnline ? 'online' : 'offline')
                     };
+
+                    // Broadcast to admin room for real-time map tracking
+                    const adminBroadcast = {
+                        deliveryPartnerId: String(deliveryPartnerId),
+                        _id: String(deliveryPartnerId),
+                        name: partner.name || 'Delivery Partner',
+                        phone: partner.phone || 'N/A',
+                        zoneId: partner.zoneId ? String(partner.zoneId) : null,
+                        lat: newestPoint.lat,
+                        lng: newestPoint.lng,
+                        heading: newestPoint.heading || 0,
+                        speed: newestPoint.speed || 0,
+                        accuracy: newestPoint.accuracy || 0,
+                        status: isOnline ? 'online' : 'offline',
+                        isOnline: isOnline,
+                        timestamp: now,
+                        lastUpdate: now,
+                        activeOrderId: activeOrder ? String(activeOrder.orderId || activeOrder._id) : null
+                    };
+                    io.to(rooms.admin()).emit('rider-location-update', adminBroadcast);
 
                     if (activeOrder) {
                         io.to(rooms.tracking(activeOrder._id.toString())).emit('location-update', trackingBroadcast);
@@ -228,13 +262,11 @@ export const processDriverLocationBatch = async (deliveryPartnerId, payload = {}
     }
 
     // 6. Dynamic Configuration
-    const isApproved = partner.status === 'approved';
-    const isOnline = partner.availabilityStatus === 'online';
     const hasActiveTrip = Boolean(activeOrder);
 
     let mode = 'idle';
     let stopTracking = false;
-    let intervalMs = 10000;
+    let intervalMs = 15000;
     let distanceFilterMeters = 30;
 
     if (!isApproved || (!isOnline && !hasActiveTrip)) {
@@ -245,13 +277,13 @@ export const processDriverLocationBatch = async (deliveryPartnerId, payload = {}
     } else if (hasActiveTrip) {
         mode = 'onTrip';
         stopTracking = false;
-        intervalMs = 10000; // 10s cadence on trip
-        distanceFilterMeters = 20; // 20m filter
+        intervalMs = 8000; // 8s cadence on trip
+        distanceFilterMeters = 15; // 15m filter
     } else {
         mode = 'idle';
         stopTracking = false;
-        intervalMs = 20000; // 20s cadence when idle online
-        distanceFilterMeters = 50; // 50m filter
+        intervalMs = 15000; // 15s cadence when idle online
+        distanceFilterMeters = 30; // 30m filter
     }
 
     const duration = Date.now() - startTime;

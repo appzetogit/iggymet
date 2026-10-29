@@ -453,9 +453,66 @@ export const updateDeliveryAvailability = async (userId, payload) => {
         };
         partner.lastLat = latitude;
         partner.lastLng = longitude;
+        partner.lastHeading = Number(payload?.heading) || 0;
+        partner.lastSpeed = Number(payload?.speed) || 0;
         partner.lastLocationAt = new Date();
     }
     await partner.save();
+    // Sync to Firebase Realtime Database and Socket for live admin tracking
+    try {
+        const { getFirebaseDB } = await import('../../../../config/firebase.js');
+        const firebaseDB = getFirebaseDB();
+        if (firebaseDB) {
+            const now = Date.now();
+            const isOnlineVal = validStatus === 'online';
+            const hasCoordinates = typeof latitude === 'number' && typeof longitude === 'number';
+            const updateData = {
+                status: validStatus,
+                availabilityStatus: validStatus,
+                is_online: isOnlineVal,
+                isOnline: isOnlineVal,
+                last_updated: now,
+                timestamp: now,
+                name: partner.name || '',
+                phone: partner.phone || '',
+                zoneId: partner.zoneId ? String(partner.zoneId) : null
+            };
+            if (hasCoordinates) {
+                updateData.lat = latitude;
+                updateData.lng = longitude;
+                updateData.heading = Number(payload?.heading) || 0;
+                updateData.speed = Number(payload?.speed) || 0;
+                updateData.accuracy = Number(payload?.accuracy) || 0;
+            }
+            firebaseDB.ref(`delivery_boys/${userId}`).update(updateData).catch(() => {});
+        }
+    } catch (fErr) {}
+
+    try {
+        const { getIO, rooms } = await import('../../../../config/socket.js');
+        const io = getIO();
+        if (io) {
+            const now = Date.now();
+            const isOnlineVal = validStatus === 'online';
+            const hasCoordinates = typeof latitude === 'number' && typeof longitude === 'number';
+            io.to(rooms.admin()).emit('rider-location-update', {
+                deliveryPartnerId: String(userId),
+                _id: String(userId),
+                name: partner.name || 'Delivery Partner',
+                phone: partner.phone || 'N/A',
+                zoneId: partner.zoneId ? String(partner.zoneId) : null,
+                lat: hasCoordinates ? latitude : partner.lastLat,
+                lng: hasCoordinates ? longitude : partner.lastLng,
+                heading: Number(payload?.heading) || partner.lastHeading || 0,
+                speed: Number(payload?.speed) || partner.lastSpeed || 0,
+                status: validStatus,
+                isOnline: isOnlineVal,
+                timestamp: now,
+                lastUpdate: now
+            });
+        }
+    } catch (sErr) {}
+
     return { availabilityStatus: partner.availabilityStatus };
 };
 

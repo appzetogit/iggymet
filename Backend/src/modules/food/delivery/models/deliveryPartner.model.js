@@ -105,6 +105,8 @@ const deliveryPartnerSchema = new mongoose.Schema(
         },
         lastLat: { type: Number },
         lastLng: { type: Number },
+        lastHeading: { type: Number, default: 0 },
+        lastSpeed: { type: Number, default: 0 },
         lastLocationAt: { type: Date },
         referralCode: { type: String, index: true },
         referredBy: {

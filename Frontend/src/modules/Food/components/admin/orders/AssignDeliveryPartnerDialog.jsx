@@ -29,6 +29,9 @@ const normalizeId = (value) => {
 const isPartnerOnline = (partner) => {
   const state = String(partner?.availabilityStatus || "").toLowerCase()
   if (state === "online") return true
+  if (partner?.availability?.isOnline === true || partner?.isOnline === true) return true
+  const lastAt = partner?.lastLocationAt || partner?.availability?.lastLocationUpdate
+  if (lastAt && (Date.now() - new Date(lastAt).getTime()) <= 15 * 60 * 1000) return true
   if (state === "offline") return false
   if (partner?.availability?.isOnline === true) return true
   if (partner?.availability?.isOnline === false) return false

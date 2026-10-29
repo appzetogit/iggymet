@@ -4,7 +4,7 @@ import { useDeliveryStore } from '@/modules/DeliveryV2/store/useDeliveryStore';
 import { useProximityCheck } from '@/modules/DeliveryV2/hooks/useProximityCheck';
 import { useOrderManager } from '@/modules/DeliveryV2/hooks/useOrderManager';
 import { useDeliveryNotifications } from '@food/hooks/useDeliveryNotifications';
-import { writeOrderTracking } from '@food/realtimeTracking';
+import { writeOrderTracking, writeDeliveryLocation } from '@food/realtimeTracking';
 import { deliveryAPI } from '@food/api';
 import { toast } from 'sonner';
 import { BRAND_THEME } from '@/config/brandTheme';
@@ -64,6 +64,27 @@ const getOrderRouteId = (orderLike) =>
     orderLike?._id ||
     '',
   ).trim();
+
+const getDeliveryPartnerId = () => {
+  try {
+    const rawUser = localStorage.getItem('delivery_user');
+    if (rawUser) {
+      const u = JSON.parse(rawUser);
+      if (u?._id || u?.id || u?.userId) return String(u._id || u.id || u.userId);
+    }
+    const token = localStorage.getItem('delivery_accessToken');
+    if (token) {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+        if (payload?.userId) return String(payload.userId);
+      }
+    }
+  } catch (e) {}
+  return localStorage.getItem('deliveryPartnerId') ||
+         localStorage.getItem('deliveryPartnerMongoId') ||
+         localStorage.getItem('deliveryBoyId') || '';
+};
 
 const getLocFromOrderRef = (ref, keysLat, keysLng) => {
   if (!ref) return null;
@@ -1353,7 +1374,22 @@ export default function DeliveryHomeV2({ tab = 'feed' }) {
         }).catch(() => { });
 
         // B. SOCKET LIVE (SILKY SMOOTH)
-        if (payload.orderId && emitLocationRef.current) {
+        const dpId = getDeliveryPartnerId();
+        if (dpId) {
+          writeDeliveryLocation({
+            deliveryId: dpId,
+            lat,
+            lng,
+            heading: heading || 0,
+            speed: speed || 0,
+            accuracy: pos.coords.accuracy,
+            isOnline: true,
+            activeOrderId: primaryId || null,
+            timestamp: now
+          }).catch(() => {});
+        }
+
+        if (emitLocationRef.current) {
           emitLocationRef.current(payload);
           if (secondaryId) {
             emitLocationRef.current({ ...payload, orderId: secondaryId });
@@ -1436,6 +1472,22 @@ export default function DeliveryHomeV2({ tab = 'feed' }) {
           lastCoordRef.current.lng,
           true,
           { heading: 0, speed: 0, accuracy: null }
+        ).then(() => {
+          const dpId = getDeliveryPartnerId();
+          if (dpId && lastCoordRef.current) {
+            writeDeliveryLocation({
+              deliveryId: dpId,
+              lat: lastCoordRef.current.lat,
+              lng: lastCoordRef.current.lng,
+              heading: 0,
+              speed: 0,
+              accuracy: null,
+              isOnline: true,
+              activeOrderId: null,
+              timestamp: now
+            }).catch(() => {});
+          }
+        }
         ).catch(() => { });
       }
     }, 10000); // Check every 10 seconds
