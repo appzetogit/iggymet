@@ -35,18 +35,29 @@ export default function AdminLogin() {
 
   // Redirect if already authenticated
   useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.get("expired") === "1" || location.state?.expired) {
+      return
+    }
     if (isModuleAuthenticated("admin")) {
       navigate("/admin/food", { replace: true })
     }
-  }, [navigate])
+  }, [navigate, location.search, location.state])
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.get("expired") === "1" || location.state?.expired) {
+      setError("Your session has expired. Please log in again to continue.")
+      window.history.replaceState({}, document.title, location.pathname)
+      return
+    }
+
     const message = location.state?.message
     if (message) {
       setSuccessMessage(message)
       window.history.replaceState({}, document.title, location.pathname)
     }
-  }, [location.state?.message, location.pathname])
+  }, [location.search, location.state, location.pathname])
 
   // Fetch business settings logo on mount
   useEffect(() => {
