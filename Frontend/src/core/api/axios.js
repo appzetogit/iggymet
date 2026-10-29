@@ -128,17 +128,28 @@ const onRefreshFailed = (module) => {
 
     const moduleStorageKeys = {
         seller: ['auth_seller', 'seller_accessToken', 'restaurant_accessToken', 'restaurant_refreshToken', 'seller_refreshToken', 'token'],
-        admin: ['auth_admin', 'admin_accessToken', 'admin_refreshToken', 'token'],
+        admin: ['auth_admin', 'admin_accessToken', 'admin_refreshToken', 'admin_authenticated', 'admin_user', 'admin_sidebar_state', 'admin_recent_searches', 'token'],
         delivery: ['auth_delivery', 'delivery_accessToken', 'delivery_refreshToken', 'token'],
         customer: ['auth_customer', 'user_accessToken', 'accessToken', 'user_refreshToken', 'token'],
     };
     const keysToClear = moduleStorageKeys[module] || ['token'];
     keysToClear.forEach((key) => localStorage.removeItem(key));
+    try {
+        sessionStorage.removeItem('adminAuthData');
+    } catch (_) {}
 
-    if (module === 'seller') window.location.href = '/seller/auth';
-    else if (module === 'admin') window.location.href = '/admin/login';
-    else if (module === 'delivery') window.location.href = '/delivery/auth';
-    else window.location.href = '/login';
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('authRefreshFailed', { detail: { module } }));
+        if (module === 'admin') {
+            window.dispatchEvent(new Event('adminAuthChanged'));
+        }
+
+        const currentPath = window.location.pathname.toLowerCase();
+        if (module === 'seller' && !currentPath.startsWith('/seller/auth')) window.location.replace('/seller/auth?expired=1');
+        else if (module === 'admin' && !currentPath.startsWith('/admin/login')) window.location.replace('/admin/login?expired=1');
+        else if (module === 'delivery' && !currentPath.startsWith('/delivery/auth')) window.location.replace('/delivery/auth?expired=1');
+        else if (module === 'customer' && !currentPath.startsWith('/login')) window.location.replace('/login?expired=1');
+    }
 };
 
 // Response interceptor for API calls
@@ -146,9 +157,7 @@ axiosInstance.interceptors.response.use(
     (response) => response,
     async (error) => {
         const originalRequest = error.config;
-        if (error.response?.status === 401 && !originalRequest._retry) {
-            originalRequest._retry = true;
-
+        if (error.response?.status === 401) {
             const path = window.location.pathname;
             const currentModule = path.startsWith('/seller')
                 ? 'seller'
@@ -157,6 +166,13 @@ axiosInstance.interceptors.response.use(
                     : path.startsWith('/delivery')
                         ? 'delivery'
                         : 'customer';
+
+            if (originalRequest._retry) {
+                onRefreshFailed(currentModule);
+                return Promise.reject(error);
+            }
+
+            originalRequest._retry = true;
 
             const refreshToken = getRefreshTokenForModule(currentModule);
             if (!refreshToken) {
