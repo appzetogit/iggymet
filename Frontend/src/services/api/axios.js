@@ -158,6 +158,11 @@ function clearModuleAuth(module) {
     localStorage.removeItem(`${module}_user`);
     if (module === "admin") {
       localStorage.removeItem("auth_admin");
+      localStorage.removeItem("admin_sidebar_state");
+      localStorage.removeItem("admin_recent_searches");
+      try {
+        sessionStorage.removeItem("adminAuthData");
+      } catch (_) {}
     }
     if (module === "restaurant" || module === "seller") {
       localStorage.removeItem("auth_seller");
@@ -196,6 +201,26 @@ function onRefreshFailed(module) {
   
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("authRefreshFailed", { detail: { module } }));
+    if (module === "admin") {
+      window.dispatchEvent(new Event("adminAuthChanged"));
+    }
+
+    const currentPath = window.location.pathname.toLowerCase();
+    const isAdminRoute = currentPath === "/admin" || currentPath.startsWith("/admin/");
+    const isLoginRoute = currentPath === "/admin/login" || currentPath === "/admin/auth" || currentPath.startsWith("/admin/forgot-password");
+
+    if ((module === "admin" || isAdminRoute) && !isLoginRoute) {
+      window.location.replace("/admin/login?expired=1");
+      return;
+    }
+
+    if ((module === "restaurant" || module === "seller") && !currentPath.startsWith("/restaurant/auth") && !currentPath.startsWith("/seller/auth")) {
+      window.location.replace("/seller/auth?expired=1");
+    } else if (module === "delivery" && !currentPath.startsWith("/delivery/auth")) {
+      window.location.replace("/delivery/auth?expired=1");
+    } else if (module === "user" && !currentPath.startsWith("/login") && !currentPath.startsWith("/user/auth")) {
+      window.location.replace("/login?expired=1");
+    }
   }
 }
 
@@ -226,10 +251,14 @@ apiClient.interceptors.response.use(
     if (err?.response?.status === 429) {
       return Promise.reject(err);
     }
-    if (err?.response?.status !== 401 || !original || original._retry) {
+    if (err?.response?.status !== 401 || !original) {
       return Promise.reject(err);
     }
-    const module = original.contextModule || getModuleFromUrl(original.url);
+    const module = original.contextModule || getModuleFromConfig(original) || getModuleFromUrl(original.url);
+    if (original._retry) {
+      onRefreshFailed(module);
+      return Promise.reject(err);
+    }
     const refreshToken = getRefreshToken(module);
     if (!refreshToken) {
       onRefreshFailed(module);
