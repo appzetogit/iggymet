@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from "react-router-dom"
-import { isModuleAuthenticated } from "@food/utils/auth"
+import { isModuleAuthenticated, clearModuleAuth } from "@food/utils/auth"
 
 const normalizePath = (value = "") => {
   const raw = String(value || "").trim()
@@ -25,7 +25,8 @@ export default function ProtectedRoute({ children }) {
   const isAuthenticated = isModuleAuthenticated("admin")
 
   if (!isAuthenticated) {
-    return <Navigate to="/admin/login" state={{ from: location.pathname }} replace />
+    clearModuleAuth("admin");
+    return <Navigate to="/admin/login?expired=1" state={{ from: location.pathname, expired: true }} replace />
   }
 
   try {

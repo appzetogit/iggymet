@@ -65,8 +65,8 @@ export function isTokenExpired(token) {
   }
   if (!decoded.exp) return false;
   
-  // exp is in seconds, Date.now() is in milliseconds
-  return decoded.exp * 1000 < Date.now();
+  // exp is in seconds, Date.now() is in milliseconds. 5s buffer prevents race conditions.
+  return decoded.exp * 1000 <= Date.now() + 5000;
 }
 
 /**
@@ -207,6 +207,11 @@ export function clearModuleAuth(module) {
   localStorage.removeItem(`${module}_user`);
   if (module === "admin") {
     localStorage.removeItem("auth_admin");
+    localStorage.removeItem("admin_sidebar_state");
+    localStorage.removeItem("admin_recent_searches");
+    try {
+      sessionStorage.removeItem("adminAuthData");
+    } catch (_) {}
   }
   if (module === "restaurant" || module === "seller") {
     localStorage.removeItem("auth_seller");

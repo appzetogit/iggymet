@@ -5,6 +5,7 @@ import AdminNavbar from "./AdminNavbar"
 import AdminNewOrderPopup from "./AdminNewOrderPopup"
 import { API_BASE_URL } from "@food/api/config"
 import { toast } from "sonner"
+import { isModuleAuthenticated, clearModuleAuth } from "@food/utils/auth"
 
 const debugError = (...args) => {}
 
@@ -28,20 +29,56 @@ export default function AdminLayout() {
     }
   }, [])
 
-  // Listen to token expiration failure and force logout / redirect
+  // Listen to token expiration failure, proactive expiration check, and force logout / redirect
   useEffect(() => {
     let redirected = false;
+
+    const forceRedirectToLogin = () => {
+      if (redirected) return;
+      redirected = true;
+      clearModuleAuth("admin");
+      toast.error("Session expired. Please log in again.");
+      navigate("/admin/login?expired=1", { replace: true, state: { expired: true } });
+    };
+
     const handleAuthFailure = (event) => {
       const { module } = event.detail || {};
-      if (module === "admin" && !redirected) {
-        redirected = true;
-        toast.error("Session expired. Please log in again.");
-        navigate("/admin/login", { replace: true });
+      const currentPath = window.location.pathname.toLowerCase();
+      if ((module === "admin" || currentPath.startsWith("/admin")) && !redirected) {
+        forceRedirectToLogin();
+      }
+    };
+
+    const checkSession = () => {
+      if (!isModuleAuthenticated("admin") && !redirected) {
+        forceRedirectToLogin();
+      }
+    };
+
+    // Check immediately on mount
+    checkSession();
+
+    // Periodic check every 15s in case token expires while idle on this screen
+    const interval = setInterval(checkSession, 15000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        checkSession();
       }
     };
 
     window.addEventListener("authRefreshFailed", handleAuthFailure);
-    return () => window.removeEventListener("authRefreshFailed", handleAuthFailure);
+    window.addEventListener("adminAuthChanged", checkSession);
+    window.addEventListener("focus", checkSession);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("authRefreshFailed", handleAuthFailure);
+      window.removeEventListener("adminAuthChanged", checkSession);
+      window.removeEventListener("focus", checkSession);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [navigate]);
 
   const handleCollapseChange = (collapsed) => {
